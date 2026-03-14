@@ -4,8 +4,8 @@ namespace BombermanServer
 {
     public class GameHub : Hub
     {
-        
         private static readonly Dictionary<string, string> _players = new();
+        private static string? _hostId = null;
 
         public async Task JoinGame(string playerName)
         {
@@ -23,6 +23,13 @@ namespace BombermanServer
             
             _players[id] = playerName;
 
+           
+            if (_hostId == null)
+                _hostId = id;
+
+            
+            await Clients.Caller.SendAsync("OnHostAssigned", id == _hostId);
+
             
             await Clients.Others.SendAsync("OnPlayerJoined", id, playerName);
         }
@@ -34,14 +41,12 @@ namespace BombermanServer
 
         public async Task PlayerMove(int x, int y)
         {
-            string id = Context.ConnectionId;
-            await Clients.Others.SendAsync("OnPlayerMoved", id, x, y);
+            await Clients.Others.SendAsync("OnPlayerMoved", Context.ConnectionId, x, y);
         }
 
         public async Task PlaceBomb(int x, int y)
         {
-            string id = Context.ConnectionId;
-            await Clients.Others.SendAsync("OnBombPlaced", id, x, y);
+            await Clients.Others.SendAsync("OnBombPlaced", Context.ConnectionId, x, y);
         }
 
         public async Task BombExploded(string bombId, int x, int y, string destroyedCells)
@@ -61,9 +66,18 @@ namespace BombermanServer
 
         public override async Task OnDisconnectedAsync(Exception? exception)
         {
-           
-            _players.Remove(Context.ConnectionId);
-            await Clients.Others.SendAsync("OnPlayerLeft", Context.ConnectionId);
+            string id = Context.ConnectionId;
+            _players.Remove(id);
+
+            
+            if (_hostId == id)
+            {
+                _hostId = _players.Keys.FirstOrDefault();
+                if (_hostId != null)
+                    await Clients.Client(_hostId).SendAsync("OnHostAssigned", true);
+            }
+
+            await Clients.Others.SendAsync("OnPlayerLeft", id);
             await base.OnDisconnectedAsync(exception);
         }
     }
